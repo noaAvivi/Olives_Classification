@@ -1,0 +1,245 @@
+%pylab inline
+import pandas as pd 
+import keras
+import os
+import io
+import numpy as np
+from matplotlib.pyplot import *
+from matplotlib import pyplot as plt
+
+import itertools
+from keras.preprocessing.image import ImageDataGenerator
+
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+from tensorflow import keras
+
+from sklearn import datasets,model_selection,preprocessing
+tf.__version__
+
+#import necessary libraries
+from matplotlib import pyplot as plt
+import scipy.ndimage as nd
+
+%matplotlib inline
+import pylab as pl
+from IPython impo
+
+IMSIZE = [224,224]
+BATCH = 1000
+dvc_path = "C:/Users/Noa/anaconda3/gilat/pilaVsGemVsKor"
+split_sizes = {"train": 1000, "validation":1000, "test":1000}
+
+datagen = ImageDataGenerator(rescale=1/255)
+a = ''
+b = ''
+listModels = []
+
+def plot_images(x, y,**kwargs):
+    global a, b
+    a = pair[0]
+    b = pair[1]
+    n_pix = int(np.sqrt(np.prod(x.shape[1:3]))) #assumes images are square
+    im_indices = np.random.choice(x.shape[0], 36, replace=False) #Pick 36 images randomaly without sorting
+    fig, axes = subplots(nrows=6,ncols=6, figsize=(10,10), sharex=True, sharey=True, frameon=False)
+    for i,ax in enumerate(axes.flat):
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        curr_i = im_indices[i]
+        ax.imshow(x[curr_i].reshape(n_pix,n_pix, 3), aspect="auto", **kwargs)
+        if y[curr_i]==0:
+            ax.text(10,20,pair[0], fontdict={"backgroundcolor": "gray","color": "white" })
+        else:
+              ax.text(10,20,pair[1], fontdict={"backgroundcolor": "gray","color": "white" })
+        #ax.set_title(title)
+        ax.axis('off')
+    plt.tight_layout(h_pad=0, w_pad=0)
+    
+def get_image(path):
+    img = cv2.imread(path)
+    img = cv2.resize(img, (224, 224))
+    img = array(img).reshape([1,224,224,3]) #img = img.reshape([1,224,224,3])
+    return img    
+
+def build_model(pair, listModels):
+    datagen = ImageDataGenerator(rescale=1/255)
+    plot_gen = datagen.flow_from_directory(
+    directory=dvc_path+"/train",
+    target_size=IMSIZE,
+    batch_size=36,
+    class_mode='binary',
+    )   
+    x,y = next(plot_gen)
+    
+    plot_images(x, y,interpolation="spline16")
+    
+    TF_IMSIZE = [50,50]
+    datagen = ImageDataGenerator(rescale=1/255,zoom_range=[0.3,0.3]) #samplewise_center=True, samplewise_std_normalization=True)
+    train_gen = datagen.flow_from_directory(
+        directory=dvc_path+"/train",
+        target_size=TF_IMSIZE,
+        batch_size=BATCH,
+        classes=[a,b]) #['Kor','Pila']
+    val_gen = datagen.flow_from_directory(
+        directory=dvc_path+"/validation",
+        target_size=TF_IMSIZE,
+        batch_size=1000,
+        classes=[a,b])
+
+    # Network Parameters
+    n_hidden_1 = 64 # 1st layer number of neurons
+    n_hidden_2 = 32 # 2nd layer number of neurons
+    num_input = np.prod(TF_IMSIZE)*3 #
+    num_classes = 2 # 
+    X = tf.placeholder("float", [None] + TF_IMSIZE + [3])
+    Y = tf.placeholder("float", [None, num_classes])
+
+    # placing them in a dictionary is helpful for keeping organized
+    # but these are just python variables.
+    weights = {
+        'h1': tf.Variable(tf.random_normal([num_input, n_hidden_1])),
+        'h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
+        'out': tf.Variable(tf.random_normal([n_hidden_2, num_classes]))
+        }
+
+    biases = {
+        'b1': tf.Variable(tf.random_normal([n_hidden_1])),
+        'b2': tf.Variable(tf.random_normal([n_hidden_2])),
+        'out': tf.Variable(tf.random_normal([num_classes]))
+    }
+
+    X_flat = tf.reshape(X, [tf.shape(X)[0], -1])
+
+    # Now we define the operations we'll use to construct
+    # the output from our inputs and trainable parameters
+
+    # First hidden fully connected layer
+    layer_1 = tf.matmul(X_flat, weights['h1']) + biases['b1']
+
+    # Second hidden fully connected layer
+    layer_2 = tf.matmul(layer_1, weights['h2']) + biases['b2']
+
+    # Output fully connected layer with a neuron for each class
+    logits = tf.matmul(layer_2, weights['out']) + biases['out']
+
+    tf.disable_v2_behavior()
+
+    learning_rate = 0.001
+
+    # Define the loss and optimizer
+    # recall that cross-entropy loss is what we use for most categorization problems
+    loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=Y)
+    loss_op = tf.reduce_mean(loss)
+
+    # The optimizer uses gradient descent and the backprop algorithm
+    # Most of these are just variations on Stochastic Gradient Descent
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+    train_op = optimizer.minimize(loss_op)
+
+    # Evaluate model (with test logits, for dropout to be disabled)
+    correct_pred = tf.equal(tf.argmax(logits, 1), tf.argmax(Y, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+
+    # Initialize the variables (i.e. assign their default value)
+    init = tf.global_variables_initializer()
+
+    # Parameters
+    num_steps = 1 # roughly 10 epochs
+    display_step = 1#int(num_steps//20)
+
+    #  variables = [num_steps ,train_gen, train_op, loss_op, accuracy, val_gen]
+    #  for i in variables:
+    #      print(i)
+    #       print("--------------------------------------------------------")
+
+
+    # Start training
+    with tf.Session() as sess:
+
+        # Run the initializer
+        sess.run(init)
+        loss = []
+        acc = []
+
+        for step in range(1, num_steps+1):
+            batch_x, batch_y = next(train_gen)
+            # Run optimization op (backprop)
+            _, train_loss, train_acc = sess.run([train_op, loss_op, accuracy], feed_dict={X: batch_x, Y: batch_y})
+            loss.append(train_loss)
+            acc.append(train_acc)
+            if step % display_step == 0:
+                x_val, y_val = next(val_gen)
+                val_loss, val_acc = sess.run([loss_op, accuracy], feed_dict={X: x_val, Y: y_val})
+                print(f"Step {step}, Train: Loss={np.mean(loss):.4f}, Acc={np.mean(acc):.2%}"
+                      f"| Val: Loss={val_loss:.4f}, Acc={val_acc:.2%}")
+                loss = []
+                acc = []
+        print("Optimization Finished!")
+         
+    TF_IMSIZE = IMSIZE
+
+    train_gen = datagen.flow_from_directory(
+        directory=dvc_path+"/train",
+        target_size=TF_IMSIZE,
+        batch_size=BATCH,
+        class_mode='binary'
+    )
+    val_gen = datagen.flow_from_directory(
+        directory=dvc_path+"/validation",
+        target_size=TF_IMSIZE,
+        batch_size=BATCH,
+        class_mode='binary'
+    )
+    
+    # Create a Keras Sequential model
+    # We do this by passing a list of layers to the Sequential model
+
+    model = keras.Sequential([
+        keras.layers.InputLayer(input_shape=TF_IMSIZE+[3]),
+        keras.layers.Flatten(),
+        keras.layers.Dense(20),
+        keras.layers.Dense(10)])
+
+    model.summary() #summary provides an at-a-glance look at the model we've built
+    
+    # Compile the network
+    model.compile(
+        loss='sparse_categorical_crossentropy', optimizer='nadam', metrics=['accuracy'])
+
+    steps = 1000 / BATCH
+    callbacks = [
+        keras.callbacks.ReduceLROnPlateau(
+            factor=.5, patience=1, verbose=1, min_lr=1e-8),
+        keras.callbacks.EarlyStopping(patience=5, verbose=1),
+    ]
+
+    model.fit_generator(
+        generator=train_gen,
+        steps_per_epoch=steps,
+        validation_data=val_gen,
+        validation_steps=steps,
+        callbacks=callbacks,
+        epochs=1)
+    
+    test_gen = datagen.flow_from_directory(
+    directory=dvc_path+"/test",
+    target_size=IMSIZE,
+    color_mode = "rgb",
+    batch_size=36,
+    class_mode='binary'
+    )
+    x,y = next(test_gen)
+    
+    plot_images(x, y, interpolation = "spline16")
+    model.save(f'C:/Users/Noa/anaconda3/gilat/{pair[0]}{pair[1]}')
+    model = 'C:/Users/Noa/anaconda3/gilat/'+pair[0]+pair[1]
+    print(model)
+    listModels.append(model)
+    
+spicies = ["Kor","Gem","Pila"]
+pairs = list(itertools.combinations(spicies,2)) 
+
+for pair in pairs:
+    print(pair)
+    build_model(pair, listModels)
+    
